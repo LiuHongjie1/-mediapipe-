@@ -7,21 +7,26 @@ import mediapipe as mp
 import time
 import numpy as np
 from PIL import Image, ImageFont, ImageDraw
+import time
+from tqdm import tqdm, trange
 
-# 创建一个Tkinter窗口
 window = tk.Tk()
 window.title("举手检测")
 
-# 创建一个画布，用于显示图片
 canvas = tk.Canvas(window, width=800, height=600)
 canvas.pack()
 
-# 定义一个全局变量，用于保存图片文件的路径
+video_sign = False
 img_path = None
+video_path = None
 
 mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 pose = mp_pose.Pose(static_image_mode=True)
+
+
+def clearAll():
+    canvas.delete(tk.ALL)
 
 
 def get_angle(v1, v2):
@@ -35,7 +40,6 @@ def get_angle(v1, v2):
 
 def get_pos(keypoints):
     str_pose = ""
-    # 计算左臂与水平方向的夹角
     keypoints = np.array(keypoints)
     p_x_right, p_y_right = keypoints[16]
     p_x_left, p_y_left = keypoints[15]
@@ -106,6 +110,48 @@ def process_frame(img):
     return img
 
 
+def process_video(video_path):
+    video_flag = False
+    cap = cv2.VideoCapture(video_path)
+    out_path = "./out_Data.mp4"
+    print("视频开始处理……")
+    frame_count = 0
+    while (cap.isOpened()):
+        success, frame = cap.read()
+        frame_count += 1
+        if not success:
+            break
+    cap.release()
+    print("总帧数 = ", frame_count)
+    cap = cv2.VideoCapture(video_path)
+    if video_flag == False:
+        frame_size = cap.get(cv2.CAP_PROP_FRAME_WIDTH), cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # 处理图像的尺寸。
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        out = cv2.VideoWriter(out_path, fourcc, fps, (int(frame_size[0]), int(frame_size[1])), )  # 输出图像的句柄
+    with tqdm(total=frame_count - 1) as pbar:
+        try:
+            while cap.isOpened():
+                success, frame = cap.read()
+                if success:
+                    pbar.update(1)
+                    frame = process_frame(frame)
+                    cv2.namedWindow("frame", cv2.WINDOW_NORMAL)
+                    cv2.imshow("frame", frame)
+                    out.write(frame)
+                    if cv2.waitKey(1) == 27:
+                        break
+                else:
+                    break
+        except:
+            print("中途中断")
+            pass
+    cap.release()
+    cv2.destroyAllWindows()
+    out.release()
+    print("视频已保存至", out_path)
+
+
 def pre_image(image_path):
     image = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), -1)
     img = image.copy()
@@ -113,71 +159,66 @@ def pre_image(image_path):
     return frame
 
 
-# 定义一个函数，用于打开图片文件
-def open_image():
-    # 使用filedialog模块选择图片文件
-    file_path = filedialog.askopenfilename(filetypes=[("Image files", ".jpg .png .bmp")])
-
-    # 如果文件路径不为空，打开图片文件
+def open_video():
+    clearAll()
+    file_path = filedialog.askopenfilename(filetypes=[("Vedio files", ".mp4")])
     if file_path:
-        # 使用PIL模块读取图片文件
+        global video_path
+        video_path = file_path
+        global video_sign
+        video_sign = True
+        return video_sign
+
+
+def show_video():
+    if video_sign:
+        process_video(video_path)
+
+
+def open_image():
+    clearAll()
+    file_path = filedialog.askopenfilename(filetypes=[("Image files", ".jpg .png .bmp")])
+    if file_path:
         image = Image.open(file_path).convert('RGB')
-        # 获取图片的宽度和高度
         width, height = image.size
-        # 计算图片的缩放比例，使其适应画布的大小
         scale = min(800 / width, 600 / height)
-        # 使用PIL模块缩放图片
         image = image.resize((int(width * scale), int(height * scale)))
-        # 使用PIL模块将图片转换为Tkinter兼容的格式
         photo = ImageTk.PhotoImage(image)
-        # 在画布上显示图片
         canvas.create_image(400, 300, image=photo)
-        # 将图片对象保存为全局变量，防止被垃圾回收
         global img
         img = photo
-        # 将图片文件的路径保存为全局变量，方便后续处理
         global img_path
         img_path = file_path
-        # 返回图片对象
         return image
 
 
-# 定义一个函数，用于显示关键点
 def show_keypoints():
-    # 获取当前画布上的图片对象
     global img
-    # 获取当前图片文件的路径
     global img_path
     if img and img_path:
-        # 使用PIL模块将图片对象转换为numpy数组
         image = np.array(img)
-        # 调用mediapipe_reshape.py文件中的process_frame(img_path)函数，返回处理后的图片
         image = pre_image(img_path)
-        # 使用PIL模块将numpy数组转换为图片对象
         image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-        # 获取原图片的宽度和 高度
         original_width = img.width()
         original_height = img.height()
-        # 获取处理后的图片的宽度和高度
         processed_width = image.width
         processed_height = image.height
-        # 使用PIL模块将图片对象缩放到和原图片一样的大小
         image = image.resize((original_width, original_height))
-        # 使用PIL模块将图片对象转换为Tkinter兼容的格式
         photo = ImageTk.PhotoImage(image)
-        # 在画布上显示图片
         canvas.create_image(400, 300, image=photo)
-        # 将图片对象保存为全局变量，防止被垃圾回收
         img = photo
 
 
-# 创建一个按钮，用于打开图片文件
 open_button = tk.Button(window, text="打开图片", command=open_image)
 open_button.pack(side=tk.LEFT)
 
-# 创建一个按钮，用于显示关键点
 keypoints_button = tk.Button(window, text="检测结果", command=show_keypoints)
-keypoints_button.pack(side=tk.RIGHT)
+keypoints_button.pack(side=tk.LEFT)
 
-# 进入Tkinter主循环
+open_button = tk.Button(window, text="打开视频", command=open_video)
+open_button.pack(side=tk.RIGHT)
+
+open_button = tk.Button(window, text="检测视频", command=show_video)
+open_button.pack(side=tk.RIGHT)
+
 window.mainloop()
